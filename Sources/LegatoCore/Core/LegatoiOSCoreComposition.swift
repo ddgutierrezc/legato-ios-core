@@ -24,6 +24,8 @@ public struct LegatoiOSCoreDependencies {
         sessionManager: LegatoiOSSessionManager = LegatoiOSSessionManager(),
         nowPlayingManager: LegatoiOSNowPlayingManager = LegatoiOSNowPlayingManager(),
         remoteCommandManager: LegatoiOSRemoteCommandManager = LegatoiOSRemoteCommandManager(),
+        // Canonical runtime default for iOS playback integrity closure.
+        // Queue/snapshot mutation authority stays in LegatoiOSPlayerEngine; plugin boundary delegates only.
         playbackRuntime: LegatoiOSPlaybackRuntime = LegatoiOSAVPlayerPlaybackRuntime()
     ) {
         self.queueManager = queueManager

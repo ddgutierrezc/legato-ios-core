@@ -1,11 +1,31 @@
-# legato-ios-core
+# Legato iOS Native Core (Runtime Integrity v1)
 
-SwiftPM distribution authority for Legato iOS core.
+This directory contains the iOS native core used by `@ddgutierrezc/legato-capacitor`.
 
-## Ownership boundary (v1)
+Current scope includes:
+- canonical queue/state/snapshot/event behavior owned by `LegatoiOSPlayerEngine`,
+- AVPlayer-backed runtime support via `LegatoiOSAVPlayerPlaybackRuntime`,
+- manager boundaries for AVAudioSession / Now Playing / Remote Command integration,
+- direct runtime evidence for transport/progress/end/snapshot coherence.
 
-- Source of truth and feature authoring: `legato` monorepo.
-- Distribution and immutable tagging only: `legato-ios-core`.
-- Direct feature authoring in this repository is NON-COMPLIANT.
+AVPlayer-backed runtime is implemented and active as the default runtime path for iOS foreground audible playback (`LegatoiOSAVPlayerPlaybackRuntime`).
 
-Promotion is one-way from `legato/native/ios/LegatoCore` into this repository.
+Out of scope for `ios-runtime-playback-v1`:
+- full background/interruption lifecycle production hardening,
+- broad Android/iOS parity expansion,
+- new end-user playback feature additions.
+
+Scope guardrails: `docs/architecture/ios-runtime-playback-v1-scope-guardrails.md`.
+
+This is NOT yet full background/lifecycle production hardening.
+
+## Dependency composition
+
+This module currently uses **manual composition + constructor injection**, not a DI container such as Swinject or Factory.
+
+The canonical composition root is:
+
+- `LegatoiOSCoreDependencies`
+- `LegatoiOSCoreFactory.make(...)`
+
+That is the current project standard unless the graph/lifecycle complexity grows enough to justify containerization later.

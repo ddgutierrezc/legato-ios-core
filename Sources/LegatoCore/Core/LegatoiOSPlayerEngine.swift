@@ -25,6 +25,8 @@ public final class LegatoiOSPlayerEngine: LegatoiOSPlaybackRuntimeObserver {
     private var isSetup = false
     private var lastProgressEmission: ProgressEmissionToken?
     private var sessionSignalListenerID: UUID?
+    private var isInterruptionActive = false
+    private var isRouteUnavailable = false
 
     public init(
         queueManager: LegatoiOSQueueManager,
@@ -134,6 +136,165 @@ public final class LegatoiOSPlayerEngine: LegatoiOSPlaybackRuntimeObserver {
         refreshSnapshotFromRuntime(publishProgressEvent: true)
     }
 
+    @discardableResult
+    public func appendToQueue(_ tracks: [LegatoiOSTrack]) throws -> LegatoiOSPlaybackSnapshot {
+        try guardSetup()
+
+        guard !tracks.isEmpty else {
+            return snapshotStore.getPlaybackSnapshot()
+        }
+
+        let mappedTracks = try trackMapper.mapContractTracks(tracks)
+        let previousSnapshot = snapshotStore.getPlaybackSnapshot()
+        let previousQueue = queueManager.getQueueSnapshot()
+        let mergedItems = previousQueue.items + mappedTracks
+        let startIndex = previousQueue.currentIndex ?? (mergedItems.isEmpty ? nil : 0)
+
+        let nextQueue = try queueManager.replaceQueue(mergedItems, startIndex: startIndex)
+        try performRuntimeOperation {
+            try playbackRuntime.replaceQueue(items: mergedItems.map(toRuntimeTrackSource), startIndex: startIndex)
+        }
+
+        let runtimeSnapshot = playbackRuntime.snapshot()
+        let currentTrack = queueManager.getCurrentTrack()
+        applyRuntimeSnapshot(
+            runtimeSnapshot,
+            currentTrackOverride: currentTrack,
+            currentIndexFallback: nextQueue.currentIndex,
+            queueOverride: nextQueue
+        )
+
+        let snapshot = snapshotStore.getPlaybackSnapshot()
+        publishQueueAndTrack(snapshot)
+        if snapshot.state != previousSnapshot.state {
+            publishState(snapshot.state)
+        }
+        publishMetadata(snapshot.currentTrack)
+        publishProgress(snapshot)
+        return snapshot
+    }
+
+    @discardableResult
+    public func removeFromQueue(at index: Int) throws -> LegatoiOSPlaybackSnapshot {
+        try guardSetup()
+
+        let previousSnapshot = snapshotStore.getPlaybackSnapshot()
+        let queue = queueManager.getQueueSnapshot()
+        guard queue.items.indices.contains(index) else {
+            throw LegatoiOSError(code: .invalidIndex, message: "remove index out of bounds")
+        }
+
+        var items = queue.items
+        items.remove(at: index)
+
+        let nextQueue: LegatoiOSQueueSnapshot
+        let currentTrack: LegatoiOSTrack?
+        let currentIndexFallback: Int?
+
+        if items.isEmpty {
+            nextQueue = try queueManager.replaceQueue([], startIndex: nil)
+            currentTrack = nil
+            currentIndexFallback = nil
+            try performRuntimeOperation {
+                try playbackRuntime.replaceQueue(items: [], startIndex: nil)
+            }
+        } else {
+            let nextIndex: Int
+            if let currentIndex = queue.currentIndex {
+                if currentIndex > index {
+                    nextIndex = currentIndex - 1
+                } else if currentIndex == index {
+                    nextIndex = min(index, items.count - 1)
+                } else {
+                    nextIndex = min(currentIndex, items.count - 1)
+                }
+            } else {
+                nextIndex = 0
+            }
+
+            nextQueue = try queueManager.replaceQueue(items, startIndex: nextIndex)
+            currentTrack = queueManager.getCurrentTrack()
+            currentIndexFallback = nextIndex
+            try performRuntimeOperation {
+                try playbackRuntime.replaceQueue(items: items.map(toRuntimeTrackSource), startIndex: nextIndex)
+            }
+        }
+
+        let runtimeSnapshot = playbackRuntime.snapshot()
+        applyRuntimeSnapshot(
+            runtimeSnapshot,
+            currentTrackOverride: currentTrack,
+            currentIndexFallback: currentIndexFallback,
+            queueOverride: nextQueue
+        )
+
+        let snapshot = snapshotStore.getPlaybackSnapshot()
+        publishQueueAndTrack(snapshot)
+        if snapshot.state != previousSnapshot.state {
+            publishState(snapshot.state)
+        }
+        publishMetadata(snapshot.currentTrack)
+        publishProgress(snapshot)
+        return snapshot
+    }
+
+    @discardableResult
+    public func resetQueue() throws -> LegatoiOSPlaybackSnapshot {
+        try guardSetup()
+
+        let previousSnapshot = snapshotStore.getPlaybackSnapshot()
+        let queue = try queueManager.replaceQueue([], startIndex: nil)
+        try performRuntimeOperation {
+            try playbackRuntime.replaceQueue(items: [], startIndex: nil)
+        }
+
+        applyRuntimeSnapshot(
+            playbackRuntime.snapshot(),
+            currentTrackOverride: nil,
+            currentIndexFallback: nil,
+            queueOverride: queue
+        )
+
+        let snapshot = snapshotStore.getPlaybackSnapshot()
+        publishQueueAndTrack(snapshot)
+        if snapshot.state != previousSnapshot.state {
+            publishState(snapshot.state)
+        }
+        publishMetadata(nil)
+        publishProgress(snapshot)
+        return snapshot
+    }
+
+    @discardableResult
+    public func skipTo(index: Int) throws -> LegatoiOSPlaybackSnapshot {
+        try guardSetup()
+
+        let queue = queueManager.getQueueSnapshot()
+        guard queue.items.indices.contains(index) else {
+            throw LegatoiOSError(code: .invalidIndex, message: "skipTo.index out of bounds")
+        }
+
+        let nextQueue = try queueManager.replaceQueue(queue.items, startIndex: index)
+        try performRuntimeOperation {
+            try playbackRuntime.selectIndex(index)
+        }
+
+        let runtimeSnapshot = playbackRuntime.snapshot()
+        let currentTrack = queueManager.getCurrentTrack()
+        applyRuntimeSnapshot(
+            runtimeSnapshot,
+            currentTrackOverride: currentTrack,
+            currentIndexFallback: index,
+            queueOverride: nextQueue
+        )
+
+        let snapshot = snapshotStore.getPlaybackSnapshot()
+        publishQueueAndTrack(snapshot)
+        publishMetadata(snapshot.currentTrack)
+        publishProgress(snapshot)
+        return snapshot
+    }
+
     public func skipToNext() throws {
         try guardSetup()
         guard let movedIndex = queueManager.moveToNext() else {
@@ -217,6 +378,26 @@ public final class LegatoiOSPlayerEngine: LegatoiOSPlaybackRuntimeObserver {
         sessionManager.releaseSession()
         isSetup = false
         lastProgressEmission = nil
+        isInterruptionActive = false
+        isRouteUnavailable = false
+    }
+
+    public func reassertPlaybackSurfaces() {
+        guard isSetup else {
+            return
+        }
+
+        let snapshot = snapshotStore.getPlaybackSnapshot()
+        if snapshot.currentTrack == nil && snapshot.queue.items.isEmpty {
+            return
+        }
+
+        publishMetadata(snapshot.currentTrack)
+        publishProgress(snapshot)
+        projectPlaybackState(snapshot.state)
+        remoteCommandManager.updateTransportCapabilities(
+            LegatoiOSTransportCapabilitiesProjector.fromSnapshot(snapshot)
+        )
     }
 
     public func playbackRuntimeDidUpdateProgress(_ snapshot: LegatoiOSRuntimeSnapshot) {
@@ -317,6 +498,10 @@ public final class LegatoiOSPlayerEngine: LegatoiOSPlaybackRuntimeObserver {
 
     private func publishState(_ state: LegatoiOSPlaybackState) {
         eventEmitter.emit(name: .playbackStateChanged, payload: .playbackStateChanged(state: state))
+        projectPlaybackState(state)
+    }
+
+    private func projectPlaybackState(_ state: LegatoiOSPlaybackState) {
         sessionManager.updatePlaybackState(state)
         remoteCommandManager.updatePlaybackState(state)
         nowPlayingManager.updatePlaybackState(state)
@@ -389,7 +574,19 @@ public final class LegatoiOSPlayerEngine: LegatoiOSPlaybackRuntimeObserver {
         }
 
         snapshotStore.updatePlaybackSnapshot { previous in
-            let resolvedTrack = currentTrackOverride ?? previous.currentTrack
+            let resolvedQueue = queueOverride ?? previous.queue
+            let runtimeIndex = runtimeSnapshot.currentIndex ?? currentIndexFallback ?? previous.currentIndex
+            let resolvedIndex: Int?
+            if resolvedQueue.items.isEmpty {
+                resolvedIndex = nil
+            } else if let runtimeIndex, resolvedQueue.items.indices.contains(runtimeIndex) {
+                resolvedIndex = runtimeIndex
+            } else {
+                resolvedIndex = resolvedQueue.currentIndex
+            }
+
+            let queueTrack = resolvedIndex.flatMap { resolvedQueue.items.indices.contains($0) ? resolvedQueue.items[$0] : nil }
+            let resolvedTrack = currentTrackOverride ?? queueTrack
             let resolvedDuration = runtimeSnapshot.progress.durationMs ?? resolvedTrack?.durationMs ?? previous.durationMs
             let normalizedPosition = normalizedPositionMs(
                 runtimeSnapshot.progress.positionMs,
@@ -405,11 +602,11 @@ public final class LegatoiOSPlayerEngine: LegatoiOSPlaybackRuntimeObserver {
             return LegatoiOSPlaybackSnapshot(
                 state: previous.state,
                 currentTrack: resolvedTrack,
-                currentIndex: runtimeSnapshot.currentIndex ?? currentIndexFallback ?? previous.currentIndex,
+                currentIndex: resolvedIndex,
                 positionMs: normalizedPosition,
                 durationMs: resolvedDuration,
                 bufferedPositionMs: normalizedBufferedPosition,
-                queue: queueOverride ?? previous.queue
+                queue: resolvedQueue
             )
         }
 
@@ -595,13 +792,22 @@ public final class LegatoiOSPlayerEngine: LegatoiOSPlaybackRuntimeObserver {
 
     private func handleSessionSignal(_ signal: LegatoiOSSessionSignal) {
         switch signal {
-        case .outputRouteRemoved, .interruptionBegan:
+        case .interruptionBegan:
+            isInterruptionActive = true
             pausePlaybackForSessionSignal()
-        case .interruptionEnded(let shouldResume):
-            if !shouldResume {
+        case .interruptionEnded(let intent):
+            isInterruptionActive = false
+            if intent != .shouldResume {
                 pausePlaybackForSessionSignal()
+            } else {
+                reassertPlaybackSurfaces()
             }
-            // Conservative behavior: interruption end with shouldResume=true does not auto-resume.
+        case .outputRouteLost:
+            isRouteUnavailable = true
+            pausePlaybackForSessionSignal()
+        case .outputRouteAvailable:
+            isRouteUnavailable = false
+            reassertPlaybackSurfaces()
         case .runtimeError(let message):
             publishSessionRuntimeError(message)
         }

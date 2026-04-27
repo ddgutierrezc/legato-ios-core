@@ -1,9 +1,22 @@
 import Foundation
 
-public enum LegatoiOSSessionSignal {
+public enum LegatoiOSInterruptionResumeIntent: Equatable {
+    case shouldResume
+    case shouldNotResume
+    case unknown
+}
+
+public enum LegatoiOSRouteChangeReason: Equatable {
+    case oldDeviceUnavailable
+    case noSuitableRoute
+    case newDeviceAvailable
+}
+
+public enum LegatoiOSSessionSignal: Equatable {
     case interruptionBegan
-    case interruptionEnded(shouldResume: Bool)
-    case outputRouteRemoved
+    case interruptionEnded(intent: LegatoiOSInterruptionResumeIntent)
+    case outputRouteLost(reason: LegatoiOSRouteChangeReason)
+    case outputRouteAvailable(reason: LegatoiOSRouteChangeReason)
     case runtimeError(message: String)
 }
 

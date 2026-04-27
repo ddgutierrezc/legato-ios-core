@@ -19,12 +19,12 @@ final class LegatoiOSSessionManagerTests: XCTestCase {
         let expectation = expectation(description: "manager forwards runtime signal")
 
         _ = manager.addSignalListener { signal in
-            if case .outputRouteRemoved = signal {
+            if case .outputRouteLost = signal {
                 expectation.fulfill()
             }
         }
 
-        runtime.emit(.outputRouteRemoved)
+        runtime.emit(.outputRouteLost(reason: .oldDeviceUnavailable))
 
         wait(for: [expectation], timeout: 0.1)
     }
