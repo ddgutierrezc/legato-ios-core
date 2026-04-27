@@ -93,6 +93,7 @@ public struct LegatoiOSPlaybackSnapshot {
     public let currentIndex: Int?
     public let positionMs: Int64
     public let durationMs: Int64?
+    public let isSeekableHint: Bool?
     public let bufferedPositionMs: Int64?
     public let queue: LegatoiOSQueueSnapshot
 
@@ -102,6 +103,7 @@ public struct LegatoiOSPlaybackSnapshot {
         currentIndex: Int?,
         positionMs: Int64,
         durationMs: Int64?,
+        isSeekableHint: Bool? = nil,
         bufferedPositionMs: Int64?,
         queue: LegatoiOSQueueSnapshot
     ) {
@@ -110,6 +112,7 @@ public struct LegatoiOSPlaybackSnapshot {
         self.currentIndex = currentIndex
         self.positionMs = positionMs
         self.durationMs = durationMs
+        self.isSeekableHint = isSeekableHint
         self.bufferedPositionMs = bufferedPositionMs
         self.queue = queue
     }

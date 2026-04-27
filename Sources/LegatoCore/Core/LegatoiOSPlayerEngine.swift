@@ -86,6 +86,7 @@ public final class LegatoiOSPlayerEngine: LegatoiOSPlaybackRuntimeObserver {
                 currentIndex: runtimeSnapshot.currentIndex ?? queueSnapshot.currentIndex,
                 positionMs: runtimeSnapshot.progress.positionMs,
                 durationMs: runtimeSnapshot.progress.durationMs ?? currentTrack?.durationMs,
+                isSeekableHint: runtimeSnapshot.progress.isSeekableHint,
                 bufferedPositionMs: runtimeSnapshot.progress.bufferedPositionMs,
                 queue: queueSnapshot
             )
@@ -153,6 +154,43 @@ public final class LegatoiOSPlayerEngine: LegatoiOSPlaybackRuntimeObserver {
         let nextQueue = try queueManager.replaceQueue(mergedItems, startIndex: startIndex)
         try performRuntimeOperation {
             try playbackRuntime.replaceQueue(items: mergedItems.map(toRuntimeTrackSource), startIndex: startIndex)
+        }
+
+        let runtimeSnapshot = playbackRuntime.snapshot()
+        let currentTrack = queueManager.getCurrentTrack()
+        applyRuntimeSnapshot(
+            runtimeSnapshot,
+            currentTrackOverride: currentTrack,
+            currentIndexFallback: nextQueue.currentIndex,
+            queueOverride: nextQueue
+        )
+
+        let snapshot = snapshotStore.getPlaybackSnapshot()
+        publishQueueAndTrack(snapshot)
+        if snapshot.state != previousSnapshot.state {
+            publishState(snapshot.state)
+        }
+        publishMetadata(snapshot.currentTrack)
+        publishProgress(snapshot)
+        return snapshot
+    }
+
+    @discardableResult
+    public func add(tracks: [LegatoiOSTrack], startIndex: Int? = nil) throws -> LegatoiOSPlaybackSnapshot {
+        try guardSetup()
+
+        if startIndex == nil {
+            return try appendToQueue(tracks)
+        }
+
+        let mappedTracks = try trackMapper.mapContractTracks(tracks)
+        let previousSnapshot = snapshotStore.getPlaybackSnapshot()
+        let previousQueue = queueManager.getQueueSnapshot()
+        let mergedItems = previousQueue.items + mappedTracks
+        let resolvedStartIndex = previousQueue.items.count + (startIndex ?? 0)
+        let nextQueue = try queueManager.replaceQueue(mergedItems, startIndex: resolvedStartIndex)
+        try performRuntimeOperation {
+            try playbackRuntime.replaceQueue(items: mergedItems.map(toRuntimeTrackSource), startIndex: resolvedStartIndex)
         }
 
         let runtimeSnapshot = playbackRuntime.snapshot()
@@ -479,6 +517,7 @@ public final class LegatoiOSPlayerEngine: LegatoiOSPlaybackRuntimeObserver {
                 currentIndex: $0.currentIndex,
                 positionMs: $0.positionMs,
                 durationMs: $0.durationMs,
+                isSeekableHint: $0.isSeekableHint,
                 bufferedPositionMs: $0.bufferedPositionMs,
                 queue: $0.queue
             )
@@ -605,6 +644,7 @@ public final class LegatoiOSPlayerEngine: LegatoiOSPlaybackRuntimeObserver {
                 currentIndex: resolvedIndex,
                 positionMs: normalizedPosition,
                 durationMs: resolvedDuration,
+                isSeekableHint: runtimeSnapshot.progress.isSeekableHint,
                 bufferedPositionMs: normalizedBufferedPosition,
                 queue: resolvedQueue
             )
@@ -704,7 +744,8 @@ public final class LegatoiOSPlayerEngine: LegatoiOSPlaybackRuntimeObserver {
             progress: LegatoiOSRuntimeProgress(
                 positionMs: 0,
                 durationMs: runtimeSnapshot.progress.durationMs,
-                bufferedPositionMs: 0
+                bufferedPositionMs: 0,
+                isSeekableHint: runtimeSnapshot.progress.isSeekableHint
             )
         )
     }
@@ -762,6 +803,7 @@ public final class LegatoiOSPlayerEngine: LegatoiOSPlaybackRuntimeObserver {
                 currentIndex: $0.currentIndex,
                 positionMs: $0.positionMs,
                 durationMs: $0.durationMs,
+                isSeekableHint: $0.isSeekableHint,
                 bufferedPositionMs: $0.bufferedPositionMs,
                 queue: $0.queue
             )

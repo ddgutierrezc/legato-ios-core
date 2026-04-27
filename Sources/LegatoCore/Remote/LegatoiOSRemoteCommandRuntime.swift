@@ -65,6 +65,9 @@ public final class LegatoiOSMediaPlayerRemoteCommandRuntime: LegatoiOSRemoteComm
         ]
 
         let token = commandCenter.changePlaybackPositionCommand.addTarget { positionTimeSeconds in
+            guard self.commandCenter.changePlaybackPositionCommand.isEnabled else {
+                return
+            }
             let ms = max(0, Int64((positionTimeSeconds * 1_000.0).rounded()))
             dispatch(.seek(positionMs: ms))
         }

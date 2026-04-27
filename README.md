@@ -17,6 +17,15 @@ Out of scope for `ios-runtime-playback-v1`:
 
 Scope guardrails: `docs/architecture/ios-runtime-playback-v1-scope-guardrails.md`.
 
+Streaming semantics guardrails: `docs/architecture/streaming-media-semantics-v1-scope-guardrails.md`.
+
+## Streaming semantics projection (v1)
+
+- `file` / `progressive`: seekable while active and not ended.
+- `hls` / `dash`: default non-seekable; enable seek only when finite duration and AVPlayer seekability evidence are both present.
+- Remote change-playback-position command must stay aligned with projected `canSeek`.
+- If runtime evidence is insufficient, degrade to non-seekable.
+
 This is NOT yet full background/lifecycle production hardening.
 
 ## Dependency composition

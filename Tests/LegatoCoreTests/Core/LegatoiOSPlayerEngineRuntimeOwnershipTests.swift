@@ -21,6 +21,28 @@ final class LegatoiOSPlayerEngineRuntimeOwnershipTests: XCTestCase {
         XCTAssertEqual(runtime.replaceQueueItemsHistory.last?.map(\.id), ["track-1", "track-2", "track-3"])
     }
 
+    func testAddWithStartIndexResolvesAgainstAppendedBatch() throws {
+        let runtime = OwnershipFakePlaybackRuntime()
+        let emitter = LegatoiOSEventEmitter()
+        let engine = makeEngine(runtime: runtime, emitter: emitter)
+
+        try engine.setup()
+        try engine.load(
+            tracks: [makeTrack(id: "base-1"), makeTrack(id: "base-2")],
+            startIndex: 0
+        )
+
+        let snapshot = try engine.add(
+            tracks: [makeTrack(id: "new-1"), makeTrack(id: "new-2")],
+            startIndex: 1
+        )
+
+        XCTAssertEqual(snapshot.queue.items.map { $0.id }, ["base-1", "base-2", "new-1", "new-2"])
+        XCTAssertEqual(snapshot.currentIndex, 3)
+        XCTAssertEqual(snapshot.currentTrack?.id, "new-2")
+        XCTAssertEqual(runtime.replaceQueueStartIndexes.last ?? nil, 3)
+    }
+
     func testRemoveTrackNormalizesToCanonicalFlowAndMovesRuntimeIndex() throws {
         let runtime = OwnershipFakePlaybackRuntime()
         let emitter = LegatoiOSEventEmitter()

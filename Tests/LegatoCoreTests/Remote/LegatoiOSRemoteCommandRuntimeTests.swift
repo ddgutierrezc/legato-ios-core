@@ -8,6 +8,7 @@ final class LegatoiOSRemoteCommandRuntimeTests: XCTestCase {
         var received: [LegatoiOSRemoteCommand] = []
 
         runtime.bind { received.append($0) }
+        runtime.updateTransportCapabilities(.init(canSkipNext: true, canSkipPrevious: true, canSeek: true))
 
         center.play.trigger()
         center.pause.trigger()
@@ -52,6 +53,21 @@ final class LegatoiOSRemoteCommandRuntimeTests: XCTestCase {
         XCTAssertEqual(center.next.removeTargetCount, 1)
         XCTAssertEqual(center.previous.removeTargetCount, 1)
         XCTAssertEqual(center.position.removeTargetCount, 1)
+    }
+
+    func testSeekDispatchIsSuppressedWhenChangePlaybackPositionCommandIsDisabled() {
+        let center = FakeRemoteCommandCenter()
+        let runtime = LegatoiOSMediaPlayerRemoteCommandRuntime(commandCenter: center)
+        var received: [LegatoiOSRemoteCommand] = []
+
+        runtime.bind { received.append($0) }
+        runtime.updateTransportCapabilities(.init(canSkipNext: true, canSkipPrevious: true, canSeek: false))
+        center.position.trigger(positionTimeSeconds: 33.0)
+
+        XCTAssertFalse(received.contains {
+            if case .seek = $0 { return true }
+            return false
+        })
     }
 }
 

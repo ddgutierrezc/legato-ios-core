@@ -16,10 +16,19 @@ public enum LegatoiOSTransportCapabilitiesProjector {
             return LegatoiOSTransportCapabilities(canSkipNext: false, canSkipPrevious: false, canSeek: false)
         }
 
+        let activeTrack = queueItems[index]
+        let canSeek: Bool
+        switch activeTrack.type {
+        case .hls, .dash:
+            canSeek = snapshot.durationMs != nil && snapshot.isSeekableHint == true
+        default:
+            canSeek = true
+        }
+
         return LegatoiOSTransportCapabilities(
             canSkipNext: index < queueItems.count - 1,
             canSkipPrevious: index > 0,
-            canSeek: true
+            canSeek: canSeek
         )
     }
 }

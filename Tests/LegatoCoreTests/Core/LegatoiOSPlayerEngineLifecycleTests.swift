@@ -110,6 +110,31 @@ final class LegatoiOSPlayerEngineLifecycleTests: XCTestCase {
         XCTAssertEqual(reassertStateEvents, 0)
     }
 
+    func testRemoteNextEmitsAfterCanonicalPlaybackMutationEvents() throws {
+        let fixture = makeFixture()
+        var eventNames: [LegatoiOSEventName] = []
+        _ = fixture.eventEmitter.addListener { event in
+            eventNames.append(event.name)
+        }
+
+        try fixture.engine.setup()
+        try fixture.engine.load(tracks: [makeTrack(id: "track-1"), makeTrack(id: "track-2")], startIndex: 0)
+        try fixture.engine.play()
+
+        let beforeRemoteCount = eventNames.count
+        fixture.remoteRuntime.emit(.next)
+
+        let remoteWindow = Array(eventNames.dropFirst(beforeRemoteCount))
+        guard let remoteNextIndex = remoteWindow.firstIndex(of: .remoteNext) else {
+            return XCTFail("Expected remote-next event")
+        }
+        guard let trackChangedIndex = remoteWindow.firstIndex(of: .playbackActiveTrackChanged) else {
+            return XCTFail("Expected playback-active-track-changed event")
+        }
+
+        XCTAssertGreaterThan(remoteNextIndex, trackChangedIndex)
+    }
+
     private func makeFixture() -> LifecycleFixture {
         let playbackRuntime = LifecycleFakePlaybackRuntime()
         let sessionRuntime = LifecycleFakeSessionRuntime()
@@ -285,8 +310,11 @@ private final class LifecycleSpyNowPlayingRuntime: LegatoiOSNowPlayingRuntime {
 private final class LifecycleSpyRemoteRuntime: LegatoiOSRemoteCommandRuntime {
     private(set) var playbackStateUpdates: [LegatoiOSPlaybackState] = []
     private(set) var transportCapabilityUpdates: [LegatoiOSTransportCapabilities] = []
+    private var dispatch: ((LegatoiOSRemoteCommand) -> Void)?
 
-    func bind(dispatch: @escaping (LegatoiOSRemoteCommand) -> Void) {}
+    func bind(dispatch: @escaping (LegatoiOSRemoteCommand) -> Void) {
+        self.dispatch = dispatch
+    }
 
     func updatePlaybackState(_ state: LegatoiOSPlaybackState) {
         playbackStateUpdates.append(state)
@@ -296,5 +324,11 @@ private final class LifecycleSpyRemoteRuntime: LegatoiOSRemoteCommandRuntime {
         transportCapabilityUpdates.append(capabilities)
     }
 
-    func unbind() {}
+    func unbind() {
+        dispatch = nil
+    }
+
+    func emit(_ command: LegatoiOSRemoteCommand) {
+        dispatch?(command)
+    }
 }
