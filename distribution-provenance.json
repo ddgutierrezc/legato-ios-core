@@ -1,9 +1,9 @@
 {
   "sourceRepo": "https://github.com/ddgutierrezc/legato.git",
-  "sourceCommit": "96b220acb9c058063a59d1540b443b0d71dabc41",
+  "sourceCommit": "26edad2192856c8fc227cee06b705efca6db94e2",
   "packageName": "LegatoCore",
   "product": "LegatoCore",
-  "version": "0.1.3",
-  "releaseTag": "v0.1.3",
-  "exportedAt": "2026-04-27T22:57:12Z"
+  "version": "1.0.0",
+  "releaseTag": "v1.0.0",
+  "exportedAt": "2026-04-28T18:42:48Z"
 }
